@@ -24,6 +24,7 @@
     "cron:decay": "tsx scripts/decay-cron.ts",
     "cron:summarize": "tsx scripts/summarize-cron.ts",
     "migrate:cloud": "tsx scripts/migrate-to-cloud.ts",
+    "mcp:setup": "tsx scripts/setup-mcp.ts",
     "sdk:build": "tsup src/sdk/ts/index.ts --format cjs,esm --dts --out-dir dist"
   },
   "dependencies": {

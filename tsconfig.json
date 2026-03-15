@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "module": "CommonJS",
     "moduleResolution": "node",
     "strict": true,
@@ -19,6 +19,6 @@
     "incremental": true,
     "plugins": [{ "name": "next" }]
   },
-  "include": ["src/**/*", "scripts/**/*", "tests/**/*"],
+  "include": ["next-env.d.ts", "src/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", ".next", "src/sdk/python"]
 }

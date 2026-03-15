@@ -151,7 +151,7 @@ export class MemoryEngine {
           headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}
         })
         if (!res.ok) return null
-        const data = await res.json()
+        const data = await res.json() as { systemPromptBlock?: string }
         return data.systemPromptBlock ?? null
       } catch { return null }
     }

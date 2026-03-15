@@ -3,6 +3,8 @@
 // Every feature imports getStorage() from here.
 
 import type { StorageAdapter } from './storage/types'
+import { LocalStorage } from './storage/local'
+import { CloudStorage } from './storage/cloud'
 
 let _instance: StorageAdapter | null = null
 
@@ -10,10 +12,8 @@ export function getStorage(): StorageAdapter {
   if (_instance) return _instance
   const mode = process.env.MEMORY_ENGINE_MODE ?? 'local'
   if (mode === 'cloud') {
-    const { CloudStorage } = require('./storage/cloud')
     _instance = new CloudStorage()
   } else {
-    const { LocalStorage } = require('./storage/local')
     _instance = new LocalStorage()
   }
   return _instance!

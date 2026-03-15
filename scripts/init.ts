@@ -17,20 +17,19 @@ async function init() {
   if (existsSync(dbPath)) return
 
   try {
+    const { readFileSync } = await import('fs')
     const Database = require('better-sqlite3')
-    const { readFileSync } = require('fs')
-    const { join: pjoin, existsSync: pExists } = require('path')
 
     const db = new Database(dbPath)
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
 
     const schemaPaths = [
-      pjoin(process.cwd(), 'database', 'local-schema.sql'),
-      pjoin(__dirname, '../database/local-schema.sql'),
+      join(process.cwd(), 'database', 'local-schema.sql'),
+      join(__dirname, '../database/local-schema.sql'),
     ]
     for (const p of schemaPaths) {
-      if (pExists(p)) { db.exec(readFileSync(p, 'utf-8')); break }
+      if (existsSync(p)) { db.exec(readFileSync(p, 'utf-8')); break }
     }
     db.close()
 
