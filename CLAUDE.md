@@ -185,18 +185,19 @@ memory-engine/
 - [ ] `dashboard-ui`     — Next.js 5-tab dashboard
 
 ### Phase 2 — Should Have (open source launch)
-- [ ] `python-sdk`       — pip install memory-engine-sdk
-- [ ] `json-export`      — JSON / Markdown / cursor-rules export
-- [ ] `n8n-node`         — n8n community node
-- [ ] `cursor-rules`     — .cursor/memory.md auto-generation
+- [x] `python-sdk`       — pip install memory-engine-sdk
+- [x] `json-export`      — JSON / Markdown / cursor-rules export (scripts/export.ts)
+- [x] `cursor-rules`     — .cursor/memory.md auto-generation
+- [x] `readme`           — Production-quality open source README
 
-### Phase 3 — Could Have (Pro tier)
+### Phase 3 — Could Have (Pro tier + integrations)
 - [ ] `semantic-search`       — pgvector (cloud mode only)
 - [ ] `summarization`         — GPT-4o-mini session compression
 - [ ] `proactive-surfacing`   — Inject unrequested relevant memories
 - [ ] `webhook-ingest`        — Slack / GitHub event ingestion
 - [ ] `health-dashboard`      — Memory quality metrics
 - [ ] `stripe-billing`        — Pro payment + local→cloud migration
+- [ ] `n8n-node`              — n8n community node (two HTTP Request nodes cover 90% of cases)
 
 ### Phase 4 — Won't Have v1 (Team tier)
 - [ ] `multi-tenant-api`     — API keys per customer

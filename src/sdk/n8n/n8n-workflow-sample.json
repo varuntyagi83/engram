@@ -1,0 +1,82 @@
+{
+  "name": "Memory Engine Demo",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [250, 300],
+      "parameters": {}
+    },
+    {
+      "id": "2",
+      "name": "Memory Retrieve",
+      "type": "n8n-nodes-community.memoryEngine",
+      "position": [450, 300],
+      "parameters": {
+        "operation": "retrieve",
+        "userId": "default"
+      }
+    },
+    {
+      "id": "3",
+      "name": "OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "position": [650, 300],
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list"
+        },
+        "prompt": "={{ $json.systemPromptBlock }}\n\nUser: Hello, what do you remember about me?"
+      }
+    },
+    {
+      "id": "4",
+      "name": "Memory Store",
+      "type": "n8n-nodes-community.memoryEngine",
+      "position": [850, 300],
+      "parameters": {
+        "operation": "store",
+        "userId": "default",
+        "llmResponse": "={{ $json.text }}"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1050, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { reply: $node[\"OpenAI\"].json.text } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [{ "node": "Memory Retrieve", "type": "main", "index": 0 }]
+      ]
+    },
+    "Memory Retrieve": {
+      "main": [
+        [{ "node": "OpenAI", "type": "main", "index": 0 }]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [{ "node": "Memory Store", "type": "main", "index": 0 }]
+      ]
+    },
+    "Memory Store": {
+      "main": [
+        [{ "node": "Respond", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {}
+}
