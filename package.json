@@ -1,0 +1,51 @@
+{
+  "name": "memory-engine",
+  "version": "0.1.0",
+  "description": "Local-first persistent memory for AI agents. Free forever. Upgrade to cloud for teams.",
+  "author": "Varun Tyagi <varun@meetvaruntyagi.com>",
+  "homepage": "https://meetvaruntyagi.com",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/varuntyagi83/memory-engine"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:local": "MEMORY_ENGINE_MODE=local vitest run",
+    "test:cloud": "MEMORY_ENGINE_MODE=cloud vitest run",
+    "mcp": "tsx src/mcp/server.ts",
+    "init": "tsx scripts/init.ts",
+    "postinstall": "tsx scripts/init.ts",
+    "export": "tsx scripts/export.ts",
+    "cron:decay": "tsx scripts/decay-cron.ts",
+    "cron:summarize": "tsx scripts/summarize-cron.ts",
+    "migrate:cloud": "tsx scripts/migrate-to-cloud.ts",
+    "sdk:build": "tsup src/sdk/ts/index.ts --format cjs,esm --dts --out-dir dist"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "next": "14.2.0",
+    "openai": "^4.52.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "optionalDependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "stripe": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

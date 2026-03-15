@@ -1,0 +1,48 @@
+{
+  "_comment": "Memory Engine MCP client configs. Copy the relevant section to your tool's config file.",
+
+  "cursor": {
+    "_file": ".cursor/mcp.json",
+    "_instructions": "Create .cursor/mcp.json in your project root with the mcpServers block below",
+    "mcpServers": {
+      "memory-engine": {
+        "command": "npx",
+        "args": ["tsx", "src/mcp/server.ts"],
+        "env": {
+          "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+          "MEMORY_ENGINE_MODE": "local",
+          "MEMORY_ENGINE_USER_ID": "varun"
+        }
+      }
+    }
+  },
+
+  "claude-code": {
+    "_file": "~/.claude.json",
+    "_instructions": "Add the mcpServers block to your ~/.claude.json (merge if it already exists)",
+    "mcpServers": {
+      "memory-engine": {
+        "command": "npx",
+        "args": ["tsx", "/ABSOLUTE/PATH/TO/memory-engine/src/mcp/server.ts"],
+        "env": {
+          "OPENAI_API_KEY": "sk-...",
+          "MEMORY_ENGINE_MODE": "local",
+          "MEMORY_ENGINE_USER_ID": "varun"
+        }
+      }
+    }
+  },
+
+  "global-npm": {
+    "_instructions": "If you publish memory-engine to npm, users can use the simpler form",
+    "mcpServers": {
+      "memory-engine": {
+        "command": "memory-engine",
+        "args": ["mcp"],
+        "env": {
+          "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+        }
+      }
+    }
+  }
+}

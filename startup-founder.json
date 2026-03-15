@@ -1,0 +1,12 @@
+{
+  "name": "Startup Founder",
+  "description": "For technical founders building 0-to-1 products",
+  "memories": [
+    { "type": "preference", "content": "Ship fast, iterate — perfect is the enemy of done", "importance": 4 },
+    { "type": "preference", "content": "Prefers managed services over self-hosted infrastructure", "importance": 3 },
+    { "type": "semantic",   "content": "Values unit economics and revenue metrics over vanity metrics", "importance": 4 },
+    { "type": "procedural", "content": "Validates with 10 users before building full feature", "importance": 4 },
+    { "type": "preference", "content": "Wants the simplest solution that could possibly work", "importance": 3 }
+  ],
+  "profile_defaults": { "role": "Founder", "stage": "early-stage" }
+}

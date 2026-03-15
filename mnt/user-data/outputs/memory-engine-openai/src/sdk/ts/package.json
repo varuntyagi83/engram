@@ -1,0 +1,26 @@
+{
+  "name": "memory-engine-sdk",
+  "version": "0.1.0",
+  "description": "Local-first persistent memory for AI agents",
+  "main": "../../dist/src/sdk/ts/index.js",
+  "module": "../../dist/src/sdk/ts/index.mjs",
+  "types": "../../dist/src/sdk/ts/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "../../dist/src/sdk/ts/index.mjs",
+      "require": "../../dist/src/sdk/ts/index.js",
+      "types": "../../dist/src/sdk/ts/index.d.ts"
+    }
+  },
+  "files": ["../../dist/src/sdk/ts", "../../dist/src/lib"],
+  "keywords": ["ai", "memory", "agents", "llm", "openai", "mcp", "sqlite"],
+  "author": "Varun Tyagi <varun@meetvaruntyagi.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/varuntyagi83/memory-engine",
+  "peerDependencies": {
+    "openai": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": { "optional": true }
+  }
+}

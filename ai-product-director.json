@@ -1,0 +1,22 @@
+{
+  "name": "AI Product Director",
+  "description": "For senior AI/data leaders building products — based on real patterns",
+  "author": "Varun Tyagi",
+  "memories": [
+    { "type": "preference", "content": "Wants code first, explanation after", "importance": 4 },
+    { "type": "preference", "content": "No preamble — get straight to the answer", "importance": 4 },
+    { "type": "preference", "content": "Prefers TypeScript over JavaScript for new projects", "importance": 3 },
+    { "type": "semantic",   "content": "Understands LLM architecture, prompt engineering, and agent patterns", "importance": 4 },
+    { "type": "semantic",   "content": "Experienced with MCP protocol and tool-use patterns", "importance": 3 },
+    { "type": "procedural", "content": "Uses Ralph Loop methodology for Claude Code sessions to avoid context rot", "importance": 4 },
+    { "type": "procedural", "content": "Deploys to GCP Cloud Run, prefers europe-west3 region", "importance": 3 },
+    { "type": "preference", "content": "Prefers FastAPI over Flask for Python APIs", "importance": 3 },
+    { "type": "semantic",   "content": "Familiar with n8n, Supabase, pgvector, and Stripe integration", "importance": 3 },
+    { "type": "preference", "content": "Uses pnpm not npm for Node.js projects", "importance": 2 }
+  ],
+  "profile_defaults": {
+    "role": "Director of AI",
+    "skill_level": "senior",
+    "preferred_stack": "TypeScript + Next.js + Supabase + GCP"
+  }
+}
