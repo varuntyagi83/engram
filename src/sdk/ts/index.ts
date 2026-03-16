@@ -71,6 +71,33 @@ export class MemoryEngine {
     return [{ role: 'system', content: block }, ...messages]
   }
 
+  // ── beforeWithContext() — proactive surfacing variant ────
+  // Like before(), but also searches memories relevant to currentMessage and
+  // merges them into the injected context (deduped, capped at 20 total).
+  //
+  // In remote mode: forwards currentMessage as ?context= query param so the
+  // server can use it for proactive surfacing (ignored if server doesn't support it).
+  // Falls back to regular before() on any error.
+
+  async beforeWithContext(messages: ChatMessage[], currentMessage: string): Promise<ChatMessage[]> {
+    try {
+      const block = await this._buildContextBlockWithContext(currentMessage)
+      if (!block) return messages
+
+      const hasSystem = messages.length > 0 && messages[0].role === 'system'
+      if (hasSystem) {
+        return [
+          { ...messages[0], content: `${block}\n\n${messages[0].content}` },
+          ...messages.slice(1),
+        ]
+      }
+      return [{ role: 'system', content: block }, ...messages]
+    } catch (e) {
+      if (this.debug) console.warn('[MemoryEngine] beforeWithContext() fell back to before():', e)
+      return this.before(messages)
+    }
+  }
+
   // ── getSystemPrompt() — for Anthropic / custom LLM calls ─
   // Returns the full system prompt string to pass as the system parameter
 
@@ -85,7 +112,7 @@ export class MemoryEngine {
 
   after(response: string): void {
     this._extractAndStore(response).catch(e => {
-      if (this.debug) console.warn('[MemoryEngine] after() failed:', e.message)
+      console.error('[MemoryEngine] after() error — memory may not have been stored:', e)
     })
   }
 
@@ -147,7 +174,7 @@ export class MemoryEngine {
     // Remote API mode
     if (this.apiUrl) {
       try {
-        const res = await fetch(`${this.apiUrl}/api/memory/inject?userId=${this.userId}`, {
+        const res = await fetch(`${this.apiUrl}/api/memory/inject?userId=${encodeURIComponent(this.userId)}`, {
           headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}
         })
         if (!res.ok) return null
@@ -170,6 +197,56 @@ export class MemoryEngine {
     return block
   }
 
+  private async _buildContextBlockWithContext(currentMessage: string): Promise<string | null> {
+    // Remote API mode — forward currentMessage as ?context= so future server
+    // versions can use it for proactive surfacing; falls back gracefully today.
+    if (this.apiUrl) {
+      try {
+        const url = `${this.apiUrl}/api/memory/inject?userId=${encodeURIComponent(this.userId)}&context=${encodeURIComponent(currentMessage)}`
+        const res = await fetch(url, {
+          headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}
+        })
+        if (!res.ok) return null
+        const data = await res.json() as { systemPromptBlock?: string }
+        return data.systemPromptBlock ?? null
+      } catch { return null }
+    }
+
+    // Local mode — fetch base memories + proactive search, then merge
+    const storage = getStorage()
+    const [baseMemories, profile, threads] = await Promise.all([
+      storage.getMemories(this.userId, { limit: this.maxMemories }),
+      storage.getProfile(this.userId),
+      storage.getThreads(this.userId, ['open', 'in_progress']),
+    ])
+
+    let memories = baseMemories
+
+    // Proactive surfacing: skip FTS5 search for very short messages (< 3 chars)
+    if (currentMessage.length >= 3) {
+      try {
+        const proactive = await storage.searchMemories(this.userId, currentMessage, { limit: 5 })
+        const seen = new Set(baseMemories.map(m => m.id))
+        const merged = [...baseMemories]
+        for (const m of proactive) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id)
+            merged.push(m)
+          }
+        }
+        memories = merged.slice(0, 20)
+      } catch (e) {
+        if (this.debug) console.warn('[MemoryEngine] proactive search failed, using base memories:', e)
+      }
+    }
+
+    if (!memories.length && !Object.keys(profile).length) return null
+
+    const block = buildSystemPrompt(memories, profile, threads)
+    if (this.debug) console.log(`[MemoryEngine] injecting ~${estimateTokens(block)} tokens (with proactive context)`)
+    return block
+  }
+
   private async _extractAndStore(
     response: string
   ): Promise<{ memoriesStored: number; profileUpdated: number }> {
@@ -180,18 +257,24 @@ export class MemoryEngine {
     let memoriesStored = 0
     let profileUpdated = 0
 
+    // Batch dedup: fetch existing memories once (O(1) query) instead of N searchMemories calls
+    const allExisting = await storage.getMemories(this.userId, { limit: 500 })
+    const existingContents = allExisting.map(m => m.content.toLowerCase())
+
     for (const m of extracted.memories) {
       if (!m.content || m.content.length < 8) continue
-      // Quick dedup: skip if very similar content already exists
-      const existing = await storage.searchMemories(this.userId, m.content.slice(0, 40), { limit: 1 })
-      const isDup = existing.length > 0 &&
-        existing[0].content.toLowerCase().includes(m.content.toLowerCase().slice(0, 20))
-      if (isDup) continue
+      const prefixLow = m.content.toLowerCase().slice(0, 80)
+      const isDuplicate = existingContents.some(c => c.includes(prefixLow))
+      if (isDuplicate) {
+        if (this.debug) console.warn('[MemoryEngine] dedup: discarding near-duplicate memory:', m.content.slice(0, 60))
+        continue
+      }
       await storage.storeMemory({
         userId: this.userId, type: m.type, content: m.content,
         importance: m.importance, sessionId: this.sessionId,
       })
       memoriesStored++
+      existingContents.push(m.content.toLowerCase()) // prevent duplicates within the same batch
     }
 
     if (Object.keys(extracted.profile).length > 0) {

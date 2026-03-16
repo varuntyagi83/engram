@@ -36,7 +36,7 @@ function parseBlock(text: string): ExtractResult | null {
         priority: validatePriority(t.priority),
       })).filter((t: any) => t.title.length > 0),
     }
-  } catch { return null }
+  } catch (e) { console.warn('[extract] parseBlock: malformed MEMORIES_JSON, falling back to LLM extraction:', e); return null }
 }
 
 // ── Path B: gpt-4o-mini extraction fallback ───────────────
@@ -75,7 +75,10 @@ Only extract genuinely new, useful information. If nothing worth storing, return
     }],
   })
 
-  const raw = JSON.parse(response.choices[0].message.content ?? '{}')
+  if (!response.choices?.[0]) {
+    console.warn('[extract] extractViaLLM: OpenAI returned empty choices array');
+  }
+  const raw = JSON.parse(response.choices?.[0]?.message?.content ?? '{}')
   return {
     memories: (raw.memories ?? []).map((m: any) => ({
       type: validateMemoryType(m.type),
@@ -143,6 +146,9 @@ function validatePriority(p: any): ThreadPriority {
 
 function clampImportance(v: any): 1|2|3|4|5 {
   const n = parseInt(v) || 3
+  if (n < 1 || n > 5) {
+    console.warn(`[extract] importance value ${n} is out of range [1,5], clamping`);
+  }
   return Math.min(5, Math.max(1, n)) as 1|2|3|4|5
 }
 
@@ -151,6 +157,14 @@ function sanitizeProfile(raw: any): Record<string,string> {
   return Object.fromEntries(
     Object.entries(raw)
       .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && k.length > 0 && (v as string).length > 0)
-      .map(([k, v]) => [k.toLowerCase().replace(/\s+/g, '_'), v as string])
+      .map(([k, v]) => {
+        const key = k.toLowerCase().replace(/\s+/g, '_')
+        let val = v as string
+        if (val.length > 500) {
+          console.warn(`[extract] profile value for key "${key}" truncated from ${val.length} to 500 chars`)
+          val = val.slice(0, 500)
+        }
+        return [key, val]
+      })
   )
 }

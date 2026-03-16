@@ -2,7 +2,7 @@
 // Run automatically via postinstall.
 // Creates ~/.memory-engine/db.sqlite and applies schema.
 
-import { mkdirSync, existsSync, writeFileSync } from 'fs'
+import { mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -17,21 +17,9 @@ async function init() {
   if (existsSync(dbPath)) return
 
   try {
-    const { readFileSync } = await import('fs')
-    const Database = require('better-sqlite3')
-
-    const db = new Database(dbPath)
-    db.pragma('journal_mode = WAL')
-    db.pragma('foreign_keys = ON')
-
-    const schemaPaths = [
-      join(process.cwd(), 'database', 'local-schema.sql'),
-      join(__dirname, '../database/local-schema.sql'),
-    ]
-    for (const p of schemaPaths) {
-      if (existsSync(p)) { db.exec(readFileSync(p, 'utf-8')); break }
-    }
-    db.close()
+    const { LocalStorage } = await import('../src/lib/storage/local')
+    const s = new LocalStorage(dbPath)
+    await s.close()
 
     console.log(`✓ Memory Engine initialised`)
     console.log(`  DB: ${dbPath}`)

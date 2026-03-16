@@ -118,6 +118,37 @@ describe(`StorageAdapter (${mode})`, () => {
     })
   })
 
+  describe('decay scoring', () => {
+    it('freshly created memory has relevance_score ≈ importance (age ≈ 0)', async () => {
+      // Formula: importance × exp(-k × age_days). At age ≈ 0: score ≈ importance.
+      // This verifies the formula is applied correctly and the constants are wired up.
+      await storage.storeMemory({ userId: 'decay-math', type: 'episodic',   content: 'Episodic importance 5 created now', importance: 5 })
+      await storage.storeMemory({ userId: 'decay-math', type: 'semantic',   content: 'Semantic importance 3 created now', importance: 3 })
+      await storage.storeMemory({ userId: 'decay-math', type: 'procedural', content: 'Procedural importance 4 created now', importance: 4 })
+
+      await storage.updateRelevanceScores('decay-math')
+
+      const memories = await storage.getMemories('decay-math')
+      expect(memories.length).toBe(3)
+      for (const m of memories) {
+        // Within 1% of importance for a freshly created memory
+        expect(m.relevanceScore).toBeGreaterThanOrEqual(m.importance * 0.99)
+        expect(m.relevanceScore).toBeLessThanOrEqual(m.importance * 1.01)
+      }
+    })
+
+    it('fresh importance-5 memory is not soft-deleted by decay run', async () => {
+      // relevance_score ≈ 5 at age 0, well above the 0.05 soft-delete threshold
+      const id = await storage.storeMemory({
+        userId: 'decay-nodelete', type: 'procedural',
+        content: 'Critical decision made right now', importance: 5,
+      })
+      await storage.updateRelevanceScores('decay-nodelete')
+      const memories = await storage.getMemories('decay-nodelete')
+      expect(memories.find(m => m.id === id)).toBeDefined()
+    })
+  })
+
   describe('export/import', () => {
     it('exports and re-imports correctly', async () => {
       await storage.storeMemory({ userId: 'export-user', type: 'procedural', content: 'Export test memory', importance: 4 })

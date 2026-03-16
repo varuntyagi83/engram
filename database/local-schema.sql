@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,
   user_id       TEXT NOT NULL DEFAULT 'default',
   summary       TEXT,
+  -- message_count is tracked as 0 (known gap: no messages table to derive count from)
   message_count INTEGER DEFAULT 0,
   started_at    TEXT DEFAULT (datetime('now')),
   ended_at      TEXT

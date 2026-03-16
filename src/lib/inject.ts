@@ -14,7 +14,12 @@ export function buildSystemPrompt(
   threads: Thread[],
   opts: { includeExtractionInstruction?: boolean; maxTokens?: number } = {}
 ): string {
-  const maxChars = (opts.maxTokens ?? MAX_TOKENS) * CHARS_PER_TOKEN
+  // Reserve space for the extraction instruction so the final block
+  // (context + '\n\n' + EXTRACTION_INSTRUCTION) stays within the token budget.
+  const instructionReserve = opts.includeExtractionInstruction !== false
+    ? ('\n\n' + EXTRACTION_INSTRUCTION).length
+    : 0
+  const maxChars = (opts.maxTokens ?? MAX_TOKENS) * CHARS_PER_TOKEN - instructionReserve
   const sections: string[] = []
 
   // Profile section

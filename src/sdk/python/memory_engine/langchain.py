@@ -76,6 +76,13 @@ class MemoryEngineMemory(BaseChatMemory):  # type: ignore[misc]
         Falls back to an empty string on any error so the chain always
         receives a value for the variable.
 
+        .. warning::
+            This method uses ``asyncio.run()`` internally and is only safe
+            to call from a **synchronous** context. If your chain is already
+            running inside an async event loop (e.g. FastAPI, Jupyter,
+            async LangChain runnables), use the async variant instead to
+            avoid a "This event loop is already running" RuntimeError.
+
         Parameters
         ----------
         inputs:

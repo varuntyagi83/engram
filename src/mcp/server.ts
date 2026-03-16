@@ -98,6 +98,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     switch (name) {
 
       case 'get_memories': {
+        const validMemoryTypes = ['episodic', 'semantic', 'preference', 'procedural']
+        if (args?.type && !validMemoryTypes.includes(args.type as string)) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: `Invalid memory type: ${args.type}. Valid types: ${validMemoryTypes.join(', ')}` }) }],
+            isError: true,
+          }
+        }
         const memories = args?.query
           ? await storage.searchMemories(userId, args.query as string, { type: args?.type as any, limit: (args?.limit as number) ?? 15 })
           : await storage.getMemories(userId, { type: args?.type as any, limit: (args?.limit as number) ?? 15 })
@@ -107,11 +114,23 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       case 'store_memory': {
+        const validMemoryTypes = ['episodic', 'semantic', 'preference', 'procedural']
+        if (!args?.type || !validMemoryTypes.includes(args.type as string)) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: `type is required and must be one of: ${validMemoryTypes.join(', ')}` }) }], isError: true }
+        }
+        const content = typeof args?.content === 'string' ? args.content.trim() : ''
+        if (content.length < 8) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: 'content is required and must be at least 8 characters' }) }], isError: true }
+        }
+        const imp = Number(args?.importance ?? 3)
+        if (!Number.isInteger(imp) || imp < 1 || imp > 5) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: 'importance must be an integer 1–5' }) }], isError: true }
+        }
         const id = await storage.storeMemory({
           userId,
-          type: args?.type as any,
-          content: args?.content as string,
-          importance: (args?.importance as any) ?? 3,
+          type: args.type as any,
+          content,
+          importance: imp as 1|2|3|4|5,
           sessionId: args?.session_id as string | undefined,
         })
         return { content: [{ type: 'text', text: JSON.stringify({ id, stored: true }) }] }
@@ -128,6 +147,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
 
       case 'resolve_thread': {
+        if (!args?.thread_id) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: 'thread_id is required' }) }],
+            isError: true,
+          }
+        }
         await storage.updateThread(args?.thread_id as string, { status: 'resolved' })
         return { content: [{ type: 'text', text: JSON.stringify({ success: true }) }] }
       }

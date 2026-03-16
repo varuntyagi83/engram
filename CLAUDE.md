@@ -56,7 +56,7 @@ MEMORY_ENGINE_USER_ID=varun                         # default user, optional
 ### Pro (cloud) — additional
 ```
 MEMORY_ENGINE_MODE=cloud
-NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
@@ -175,14 +175,14 @@ memory-engine/
 ## Feature build status
 
 ### Phase 1 — Must Have (local-first MVP) ← START HERE
-- [ ] `storage-local`    — SQLite StorageAdapter + auto-init schema
-- [ ] `storage-cloud`    — Supabase StorageAdapter (same interface)
-- [ ] `extract`          — OpenAI gpt-4o-mini extraction + MEMORIES_JSON parser
-- [ ] `inject`           — System prompt builder
-- [ ] `decay-dedup`      — Decay scoring + FTS5 dedup
-- [ ] `typescript-sdk`   — MemoryEngine class (me.before / me.after)
-- [ ] `mcp-server`       — 6 tools, stdio + SSE transport
-- [ ] `dashboard-ui`     — Next.js 5-tab dashboard
+- [x] `storage-local`    — SQLite StorageAdapter + auto-init schema
+- [x] `storage-cloud`    — Supabase StorageAdapter (same interface)
+- [x] `extract`          — OpenAI gpt-4o-mini extraction + MEMORIES_JSON parser
+- [x] `inject`           — System prompt builder
+- [x] `decay-dedup`      — Decay scoring + FTS5 dedup
+- [x] `typescript-sdk`   — MemoryEngine class (me.before / me.after)
+- [x] `mcp-server`       — 6 tools, stdio + SSE transport
+- [x] `dashboard-ui`     — Next.js 6-tab dashboard (Memory, Chat, Threads, Export, Profile, Health)
 
 ### Phase 2 — Should Have (open source launch)
 - [x] `python-sdk`       — pip install memory-engine-sdk
@@ -191,13 +191,13 @@ memory-engine/
 - [x] `readme`           — Production-quality open source README
 
 ### Phase 3 — Could Have (Pro tier + integrations)
-- [ ] `semantic-search`       — pgvector (cloud mode only)
-- [ ] `summarization`         — GPT-4o-mini session compression
-- [ ] `proactive-surfacing`   — Inject unrequested relevant memories
-- [ ] `webhook-ingest`        — Slack / GitHub event ingestion
-- [ ] `health-dashboard`      — Memory quality metrics
-- [ ] `stripe-billing`        — Pro payment + local→cloud migration
-- [ ] `n8n-node`              — n8n community node (two HTTP Request nodes cover 90% of cases)
+- [x] `semantic-search`       — pgvector (cloud mode only)
+- [x] `summarization`         — GPT-4o-mini session compression (scripts/summarize-cron.ts)
+- [x] `proactive-surfacing`   — Inject unrequested relevant memories (chat/route.ts + sdk beforeWithContext)
+- [x] `webhook-ingest`        — Slack / GitHub event ingestion (src/app/api/memory/ingest/route.ts)
+- [x] `health-dashboard`      — Memory quality metrics (health route + Health tab in dashboard)
+- [x] `stripe-billing`        — Pro payment routes (checkout, webhook, status) + upgrade page
+- [x] `n8n-node`              — n8n community node (src/sdk/n8n/MemoryEngine.node.ts)
 
 ### Phase 4 — Won't Have v1 (Team tier)
 - [ ] `multi-tenant-api`     — API keys per customer
@@ -244,3 +244,9 @@ gcloud run deploy memory-engine \
   --source . --project sundaybi --region europe-west3 \
   --set-env-vars MEMORY_ENGINE_MODE=cloud
 ```
+
+> **Rate limiting on Cloud Run**: The in-process rate limiter (`src/lib/rateLimit.ts`) uses
+> an in-memory Map and is only effective when `--concurrency=1` is set. With multiple
+> concurrent instances, each instance has its own counter and limits are not enforced
+> globally. Add `--concurrency=1` to the deploy command or use a shared store (e.g. Redis)
+> for multi-instance deployments.

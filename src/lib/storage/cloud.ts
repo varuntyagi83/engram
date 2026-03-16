@@ -14,9 +14,9 @@ import type {
 const DEFAULT_AGENT = '00000000-0000-0000-0000-000000000001'
 
 function getSupabase(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+  if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
   return createClient(url, key)
 }
 
@@ -72,7 +72,9 @@ export class CloudStorage implements StorageAdapter {
     const userId = input.userId ?? process.env.MEMORY_ENGINE_USER_ID ?? 'default'
     // Generate embedding for semantic search
     let embedding: number[] | null = null
-    try { embedding = await embed(input.content) } catch { /* store without embedding */ }
+    try { embedding = await embed(input.content) } catch (e) {
+      console.error('[cloud] embedding failed, storing memory without vector:', e)
+    }
 
     const { data, error } = await this.sb.from('me_memories').insert({
       agent_id: this.agentId, user_id: userId,
@@ -108,7 +110,8 @@ export class CloudStorage implements StorageAdapter {
     if (!query.trim()) return this.getMemories(userId, { limit: opts.limit ?? 10 })
 
     let embedding: number[]
-    try { embedding = await embed(query) } catch {
+    try { embedding = await embed(query) } catch (e) {
+      console.warn('[cloud] searchMemories: embedding failed, falling back to text search:', e)
       // Fallback: text search if embedding fails
       const { data } = await this.sb.from('me_memories')
         .select('*').eq('agent_id', this.agentId).eq('user_id', userId)
@@ -123,13 +126,26 @@ export class CloudStorage implements StorageAdapter {
       p_threshold: opts.threshold ?? 0.7,
     })
     if (error) throw new Error(error.message)
-    return (data ?? []).map((r: any) => ({ ...r, type: r.memory_type, userId: r.user_id }))
+    return (data ?? []).map(toMemory)
   }
 
   async deleteMemory(id: string): Promise<void> {
     const { error } = await this.sb.from('me_memories')
       .update({ decayed_at: new Date().toISOString() }).eq('id', id)
     if (error) throw new Error(error.message)
+  }
+
+  async updateDecayScores(userId?: string): Promise<void> {
+    if (userId) {
+      await this.updateRelevanceScores(userId)
+    } else {
+      const { data } = await this.sb.from('me_memories')
+        .select('user_id').eq('agent_id', this.agentId).is('decayed_at', null)
+      const userIds = [...new Set((data ?? []).map((r: any) => r.user_id))] as string[]
+      for (const uid of userIds) {
+        await this.updateRelevanceScores(uid)
+      }
+    }
   }
 
   async updateRelevanceScores(userId: string): Promise<number> {
@@ -212,14 +228,17 @@ export class CloudStorage implements StorageAdapter {
   // ── Sessions ──────────────────────────────────────────
 
   async startSession(userId: string, sessionId: string): Promise<void> {
-    await this.sb.from('me_sessions').upsert(
+    // TODO: increment message_count when messages table exists
+    const { error } = await this.sb.from('me_sessions').upsert(
       { id: sessionId, agent_id: this.agentId, user_id: userId },
       { onConflict: 'id' }
     )
+    if (error) throw new Error(error.message)
   }
 
   async endSession(sessionId: string, summary?: string): Promise<void> {
-    await this.sb.from('me_sessions').update({ ended_at: new Date().toISOString(), summary: summary ?? null }).eq('id', sessionId)
+    const { error } = await this.sb.from('me_sessions').update({ ended_at: new Date().toISOString(), summary: summary ?? null }).eq('id', sessionId)
+    if (error) throw new Error(error.message)
   }
 
   // ── Export / Import ───────────────────────────────────
@@ -243,15 +262,56 @@ export class CloudStorage implements StorageAdapter {
   }
 
   async importAll(payload: ExportPayload): Promise<{ imported: number; skipped: number }> {
-    let imported = 0; let skipped = 0
-    for (const m of payload.memories) {
-      const { data: existing } = await this.sb.from('me_memories')
-        .select('id').eq('content', m.content).eq('user_id', m.userId).limit(1)
-      if (existing?.length) { skipped++; continue }
-      await this.storeMemory({ userId: m.userId, type: m.type, content: m.content, importance: m.importance as any, sessionId: m.sessionId ?? undefined })
-      imported++
+    if (!payload.memories.length) return { imported: 0, skipped: 0 }
+
+    // Batch-check for existing memories by content+userId to find duplicates
+    const { data: existingRows } = await this.sb.from('me_memories')
+      .select('content, user_id')
+      .eq('agent_id', this.agentId)
+      .in('user_id', [...new Set(payload.memories.map(m => m.userId))])
+      .is('decayed_at', null)
+    const existingSet = new Set(
+      (existingRows ?? []).map((r: any) => `${r.user_id}::${r.content}`)
+    )
+
+    const toInsert = payload.memories.filter(
+      m => !existingSet.has(`${m.userId}::${m.content}`)
+    )
+    const skipped = payload.memories.length - toInsert.length
+
+    if (!toInsert.length) return { imported: 0, skipped }
+
+    // Generate embeddings in batches of 20
+    const BATCH = 20
+    const embeddings: (number[] | null)[] = []
+    for (let i = 0; i < toInsert.length; i += BATCH) {
+      const batch = toInsert.slice(i, i + BATCH)
+      const batchEmbeddings = await Promise.all(
+        batch.map(m => embed(m.content).catch((e: unknown) => {
+          console.error('[cloud] embedding failed during importAll:', e)
+          return null
+        }))
+      )
+      embeddings.push(...batchEmbeddings)
     }
-    return { imported, skipped }
+
+    // Build rows for batch insert
+    const rows = toInsert.map((m, idx) => ({
+      agent_id: this.agentId,
+      user_id: m.userId,
+      memory_type: m.type,
+      content: m.content,
+      importance: m.importance,
+      session_id: m.sessionId ?? null,
+      tags: m.tags ?? [],
+      embedding: embeddings[idx],
+      created_at: m.createdAt,
+    }))
+
+    const { error } = await this.sb.from('me_memories').upsert(rows, { onConflict: 'id' })
+    if (error) throw new Error(error.message)
+
+    return { imported: toInsert.length, skipped }
   }
 
   async healthStats(userId: string): Promise<HealthStats> {
@@ -279,7 +339,7 @@ export class CloudStorage implements StorageAdapter {
       byType: { episodic: s?.episodic_count??0, semantic: s?.semantic_count??0, preference: s?.preference_count??0, procedural: s?.procedural_count??0 },
       avgImportance: s?.avg_importance ?? 0, avgRelevanceScore: s?.avg_relevance ?? 0,
       staleCount: stale, threadCount: (t??[]).length, openThreadCount: open,
-      profileKeyCount: (p??[]).length, oldestMemoryDays: 0,
+      profileKeyCount: (p??[]).length, oldestMemoryDays: s?.oldest_days ?? 0,
       healthScore: Math.max(0, score),
     }
   }

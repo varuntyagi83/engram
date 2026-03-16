@@ -11,6 +11,7 @@ import OpenAI from 'openai'
 import { getStorage } from '../../../../lib/storage'
 import { buildSystemPrompt } from '../../../../lib/inject'
 import { extractFromResponse, stripMemoriesBlock } from '../../../../lib/extract'
+import { checkRateLimit } from '../../../../lib/rateLimit'
 
 interface ChatMessage {
   role    : 'system' | 'user' | 'assistant'
@@ -38,7 +39,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const sessionId = body.sessionId
     ?? `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
-  if (!message || typeof message !== 'string') {
+  if (!checkRateLimit(`chat:${userId}`, 20)) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+  }
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
     return NextResponse.json({ error: 'Missing required field: message' }, { status: 400 })
   }
 
@@ -55,20 +60,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const storage = getStorage()
 
     // Fetch top 15 memories + profile + open threads for system prompt
-    const [memories, profile, threads] = await Promise.all([
+    const [baseMemories, profile, threads] = await Promise.all([
       storage.getMemories(userId, { limit: 15 }),
       storage.getProfile(userId),
       storage.getThreads(userId, ['open', 'in_progress']),
     ])
 
+    // Proactive surfacing: search for memories semantically relevant to the current message.
+    // Skip FTS5 search if the message is too short (< 3 chars) to avoid FTS5 parse errors.
+    let memories = baseMemories
+    if (message.length >= 3) {
+      try {
+        const proactiveMemories = await storage.searchMemories(userId, message, { limit: 5 })
+        // Merge and deduplicate by id, then cap at 20 total
+        const seen = new Set(baseMemories.map(m => m.id))
+        const merged = [...baseMemories]
+        for (const m of proactiveMemories) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id)
+            merged.push(m)
+          }
+        }
+        memories = merged.slice(0, 20)
+      } catch (e) {
+        console.warn('[chat] proactive memory search failed, using base memories:', e)
+      }
+    }
+
     const systemPromptBlock = buildSystemPrompt(memories, profile, threads, {
       includeExtractionInstruction: true,
     })
 
+    // Validate conversationHistory items before sending to OpenAI
+    const validRoles = ['user', 'assistant', 'system']
+    const validHistory = (conversationHistory ?? []).filter(
+      (m: any) => validRoles.includes(m?.role) && typeof m?.content === 'string' && m.content.length > 0
+    )
+
     // Build messages array: system + history + new user message
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPromptBlock },
-      ...conversationHistory.map(m => ({
+      ...validHistory.map(m => ({
         role    : m.role as 'system' | 'user' | 'assistant',
         content : m.content,
       })),
@@ -85,45 +117,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const rawReply = completion.choices[0]?.message?.content ?? ''
     const reply    = stripMemoriesBlock(rawReply)
 
-    // Fire-and-forget: extract + store memories from raw response (non-blocking)
-    // memoriesExtracted reports 0 at return time since extraction is async
-    const memoriesExtracted = 0
-    const extractionPromise = (async () => {
-      try {
-        const extracted = await extractFromResponse(rawReply)
+    // Await extraction so we can report the actual count of memories stored
+    let memoriesExtracted = 0
+    try {
+      const extracted = await extractFromResponse(rawReply)
 
-        for (const m of extracted.memories) {
-          if (!m.content || m.content.length < 8) continue
-          await storage.storeMemory({
-            userId,
-            type       : m.type,
-            content    : m.content,
-            importance : m.importance,
-            sessionId,
-          })
-        }
-
-        if (Object.keys(extracted.profile).length > 0) {
-          await storage.upsertProfile(userId, extracted.profile)
-        }
-
-        for (const t of extracted.threads) {
-          if (!t.title) continue
-          await storage.storeThread({
-            userId,
-            title    : t.title,
-            status   : t.action === 'resolve' ? 'resolved' : 'open',
-            priority : t.priority ?? 'medium',
-            sessionId,
-          })
-        }
-      } catch (e) {
-        console.warn('[api/memory/chat] extraction failed:', (e as Error).message)
+      for (const m of extracted.memories) {
+        if (!m.content || m.content.length < 8) continue
+        await storage.storeMemory({
+          userId,
+          type       : m.type,
+          content    : m.content,
+          importance : m.importance,
+          sessionId,
+        })
+        memoriesExtracted++
       }
-    })()
 
-    // Return immediately — don't await extraction
-    void extractionPromise
+      if (Object.keys(extracted.profile).length > 0) {
+        await storage.upsertProfile(userId, extracted.profile)
+      }
+
+      for (const t of extracted.threads) {
+        if (!t.title) continue
+        await storage.storeThread({
+          userId,
+          title    : t.title,
+          status   : t.action === 'resolve' ? 'resolved' : 'open',
+          priority : t.priority ?? 'medium',
+          sessionId,
+        })
+      }
+    } catch (e) {
+      console.error('[chat] extraction failed:', e)
+      memoriesExtracted = 0
+    }
 
     return NextResponse.json({
       reply,

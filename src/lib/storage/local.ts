@@ -45,7 +45,7 @@ function toMemory(r: any): Memory {
     content: r.content, importance: r.importance,
     relevanceScore: r.relevance_score ?? 1.0,
     sessionId: r.session_id ?? null,
-    tags: (() => { try { return JSON.parse(r.tags ?? '[]') } catch { return [] } })(),
+    tags: (() => { try { return JSON.parse(r.tags ?? '[]') } catch (e) { console.warn('[storage] toMemory: failed to parse tags JSON, defaulting to []:', e); return [] } })(),
     decayedAt: r.decayed_at ?? null,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
@@ -106,7 +106,13 @@ export class LocalStorage implements StorageAdapter {
   async searchMemories(userId: string, query: string, opts: SearchOpts = {}): Promise<Memory[]> {
     if (!query.trim()) return this.getMemories(userId, { limit: opts.limit ?? 10 })
     const limit = opts.limit ?? 10
-    const typeClause = opts.type ? `AND m.memory_type = '${opts.type}'` : ''
+    let typeClause = ''
+    if (opts.type) {
+      typeClause = 'AND m.memory_type = ?'
+    }
+    const params: any[] = [query, userId]
+    if (opts.type) params.push(opts.type)
+    params.push(limit)
     const rows = this.db.prepare(`
       SELECT m.* FROM memories m
       JOIN memories_fts fts ON m.rowid = fts.rowid
@@ -116,12 +122,25 @@ export class LocalStorage implements StorageAdapter {
         ${typeClause}
       ORDER BY rank, m.importance DESC
       LIMIT ?
-    `).all(query, userId, limit) as any[]
+    `).all(...params) as any[]
     return rows.map(toMemory)
   }
 
   async deleteMemory(id: string): Promise<void> {
     this.db.prepare(`UPDATE memories SET decayed_at = datetime('now') WHERE id = ?`).run(id)
+  }
+
+  async updateDecayScores(userId?: string): Promise<void> {
+    if (userId) {
+      await this.updateRelevanceScores(userId)
+    } else {
+      const rows = this.db.prepare(
+        `SELECT DISTINCT user_id FROM memories WHERE decayed_at IS NULL`
+      ).all() as any[]
+      for (const row of rows) {
+        await this.updateRelevanceScores(row.user_id)
+      }
+    }
   }
 
   async updateRelevanceScores(userId: string): Promise<number> {
@@ -238,6 +257,7 @@ export class LocalStorage implements StorageAdapter {
   // ── Sessions ──────────────────────────────────────────
 
   async startSession(userId: string, sessionId: string): Promise<void> {
+    // TODO: increment message_count when messages table exists
     this.db.prepare(`INSERT OR IGNORE INTO sessions (id, user_id) VALUES (?, ?)`).run(sessionId, userId)
   }
 
@@ -246,6 +266,13 @@ export class LocalStorage implements StorageAdapter {
   }
 
   // ── Export / Import ───────────────────────────────────
+
+  getDistinctUserIds(): string[] {
+    const rows = this.db.prepare(
+      `SELECT DISTINCT user_id FROM memories WHERE decayed_at IS NULL`
+    ).all() as any[]
+    return rows.map(r => r.user_id)
+  }
 
   async exportAll(userId: string): Promise<ExportPayload> {
     const [memories, profile, threads] = await Promise.all([

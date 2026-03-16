@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS me_memories (
 CREATE INDEX IF NOT EXISTS idx_me_mem_user   ON me_memories(agent_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_me_mem_active ON me_memories(agent_id, user_id) WHERE decayed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_me_mem_score  ON me_memories(relevance_score DESC) WHERE decayed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_me_mem_type   ON me_memories(agent_id, user_id, memory_type) WHERE decayed_at IS NULL;
 
 -- Semantic search via pgvector
 CREATE OR REPLACE FUNCTION me_search_memories(
@@ -46,10 +47,14 @@ CREATE OR REPLACE FUNCTION me_search_memories(
   p_limit INT DEFAULT 10, p_threshold FLOAT DEFAULT 0.7
 )
 RETURNS TABLE(id UUID, content TEXT, memory_type TEXT, importance INT,
-              relevance_score FLOAT, similarity FLOAT)
+              relevance_score FLOAT, similarity FLOAT,
+              tags TEXT[], user_id TEXT, session_id TEXT,
+              created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)
 LANGUAGE SQL STABLE AS $$
   SELECT m.id, m.content, m.memory_type, m.importance, m.relevance_score,
-         1 - (m.embedding <=> p_embedding) AS similarity
+         1 - (m.embedding <=> p_embedding) AS similarity,
+         m.tags, m.user_id, m.session_id,
+         m.created_at, m.updated_at
   FROM me_memories m
   WHERE m.agent_id = p_agent_id
     AND m.user_id  = p_user_id
@@ -118,6 +123,7 @@ CREATE TABLE IF NOT EXISTS me_sessions (
   agent_id      UUID REFERENCES me_agents(id) ON DELETE CASCADE,
   user_id       TEXT NOT NULL,
   summary       TEXT,
+  -- message_count is tracked as 0 (known gap: no messages table to derive count from)
   message_count INT DEFAULT 0,
   started_at    TIMESTAMPTZ DEFAULT now(),
   ended_at      TIMESTAMPTZ
@@ -157,7 +163,8 @@ SELECT
   COUNT(*)          FILTER(WHERE memory_type='procedural' AND decayed_at IS NULL) AS procedural_count,
   ROUND(AVG(importance)      FILTER(WHERE decayed_at IS NULL)::NUMERIC, 2)   AS avg_importance,
   ROUND(AVG(relevance_score) FILTER(WHERE decayed_at IS NULL)::NUMERIC, 2)   AS avg_relevance,
-  COUNT(*)          FILTER(WHERE relevance_score < 0.2 AND decayed_at IS NULL) AS stale_count
+  COUNT(*)          FILTER(WHERE relevance_score < 0.2 AND decayed_at IS NULL) AS stale_count,
+  EXTRACT(DAY FROM NOW() - MIN(created_at))::integer                          AS oldest_days
 FROM me_memories
 GROUP BY agent_id, user_id;
 

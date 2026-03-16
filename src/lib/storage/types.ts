@@ -140,6 +140,7 @@ export interface StorageAdapter {
   exportAll(userId: string): Promise<ExportPayload>
   importAll(payload: ExportPayload): Promise<{ imported: number; skipped: number }>
   healthStats(userId: string): Promise<HealthStats>
+  updateDecayScores(userId?: string): Promise<void>
 
   // Lifecycle
   close(): void

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStorage } from '../../../lib/storage'
 import type { MemoryType } from '../../../lib/storage'
+import { checkRateLimit } from '../../../lib/rateLimit'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(req.url)
@@ -52,7 +53,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { type, content, importance, userId, sessionId, tags } = body
+  const { type, content, importance, userId: rawUserId, sessionId, tags } = body
+  const userId = rawUserId ?? process.env.MEMORY_ENGINE_USER_ID ?? 'default'
+
+  if (!checkRateLimit(`write:${userId}`, 60)) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+  }
 
   if (!type || !content || importance === undefined) {
     return NextResponse.json(
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const storage = getStorage()
     const id = await storage.storeMemory({
-      userId    : userId ?? process.env.MEMORY_ENGINE_USER_ID ?? 'default',
+      userId,
       type,
       content,
       importance,

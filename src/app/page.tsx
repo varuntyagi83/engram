@@ -25,11 +25,11 @@ interface ChatMessage {
   content: string
 }
 
-type TabId = 'chat' | 'memory' | 'threads' | 'profile' | 'system-prompt'
+type TabId = 'chat' | 'memory' | 'threads' | 'profile' | 'system-prompt' | 'health'
 
-// ── Sample thread data for Threads tab placeholder ─────────────────────────
+// ── Thread type ─────────────────────────────────────────────────────────────
 
-interface SampleThread {
+interface Thread {
   id: string
   title: string
   status: string
@@ -37,11 +37,22 @@ interface SampleThread {
   createdAt: string
 }
 
-const SAMPLE_THREADS: SampleThread[] = [
-  { id: '1', title: 'Review API authentication approach', status: 'open', priority: 'high', createdAt: '2026-03-14' },
-  { id: '2', title: 'Decide on embedding model for Pro tier', status: 'in_progress', priority: 'medium', createdAt: '2026-03-15' },
-  { id: '3', title: 'Write onboarding docs for SDK', status: 'open', priority: 'low', createdAt: '2026-03-16' },
-]
+// ── Health stats type ───────────────────────────────────────────────────────
+
+interface HealthStats {
+  totalMemories: number
+  activeMemories: number
+  decayedMemories: number
+  byType: { episodic: number; semantic: number; preference: number; procedural: number }
+  avgImportance: number
+  avgRelevanceScore: number
+  staleCount: number
+  threadCount: number
+  openThreadCount: number
+  profileKeyCount: number
+  oldestMemoryDays: number
+  healthScore: number
+}
 
 // ── Shared styles ──────────────────────────────────────────────────────────
 
@@ -650,6 +661,12 @@ function MemoryTab() {
 // ── Tab 3: Threads ─────────────────────────────────────────────────────────
 
 function ThreadsTab() {
+  const userId = 'varun'
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
   const statusColors: Record<string, string> = {
     open: '#22c55e',
     in_progress: '#7c6af7',
@@ -664,70 +681,143 @@ function ThreadsTab() {
     critical: '#ef4444',
   }
 
+  async function fetchAllThreads() {
+    setLoading(true)
+    setError(null)
+    try {
+      const statuses = ['open', 'in_progress', 'snoozed']
+      const results = await Promise.all(
+        statuses.map(async status => {
+          const params = new URLSearchParams({ userId, status })
+          const res = await fetch(`/api/memory/threads?${params.toString()}`)
+          if (!res.ok) return []
+          const data = (await res.json()) as Thread[]
+          return data
+        })
+      )
+      const combined: Thread[] = results.flat()
+      // Deduplicate by id in case API returns overlaps
+      const seen = new Set<string>()
+      const deduped = combined.filter(t => {
+        if (seen.has(t.id)) return false
+        seen.add(t.id)
+        return true
+      })
+      setThreads(deduped)
+    } catch {
+      setError('Network error — could not load threads')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void fetchAllThreads()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const statusOptions = ['all', 'open', 'in_progress', 'snoozed']
+
+  const visible = statusFilter === 'all'
+    ? threads
+    : threads.filter(t => t.status === statusFilter)
+
   return (
     <div>
-      <div style={{ ...s.banner, display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span>Threads will appear here once the threads API is ready.</span>
-        <span style={{ color: '#666', fontSize: '12px' }}>Showing sample data below.</span>
+      {/* Filter row */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: '13px', color: '#888', marginRight: '4px' }}>Status:</span>
+        {statusOptions.map(opt => (
+          <button
+            key={opt}
+            onClick={() => setStatusFilter(opt)}
+            style={{
+              ...s.btnSecondary,
+              background: statusFilter === opt ? '#7c6af7' : '#2a2a2a',
+              border: statusFilter === opt ? '1px solid #7c6af7' : '1px solid #333',
+              color: statusFilter === opt ? '#fff' : '#aaa',
+              textTransform: 'capitalize',
+            }}
+          >
+            {opt.replace('_', ' ')}
+          </button>
+        ))}
+        <button
+          onClick={() => void fetchAllThreads()}
+          style={{ ...s.btnSecondary, marginLeft: 'auto' }}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
 
-      <p style={s.sectionTitle}>Sample Threads</p>
+      {error && <div style={s.errorBanner}>{error}</div>}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
-            {['Title', 'Status', 'Priority', 'Created'].map(h => (
-              <th
-                key={h}
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 12px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: '#888',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {SAMPLE_THREADS.map(t => (
-            <tr
-              key={t.id}
-              style={{ borderBottom: '1px solid #1e1e1e', transition: 'background 0.1s' }}
-            >
-              <td style={{ padding: '12px', color: '#d0d0d0' }}>{t.title}</td>
-              <td style={{ padding: '12px' }}>
-                <span
+      {loading ? (
+        <div style={{ color: '#666', textAlign: 'center', padding: '40px' }}>Loading threads...</div>
+      ) : visible.length === 0 ? (
+        <div style={{ color: '#555', textAlign: 'center', padding: '40px' }}>
+          No threads found{statusFilter !== 'all' ? ` with status "${statusFilter.replace('_', ' ')}"` : ''}.
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #2a2a2a' }}>
+              {['Title', 'Status', 'Priority', 'Created'].map(h => (
+                <th
+                  key={h}
                   style={{
-                    display: 'inline-block',
-                    background: (statusColors[t.status] ?? '#888') + '22',
-                    border: `1px solid ${(statusColors[t.status] ?? '#888')}44`,
-                    color: statusColors[t.status] ?? '#888',
-                    borderRadius: '4px',
-                    padding: '2px 8px',
-                    fontSize: '11px',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontSize: '12px',
                     fontWeight: 600,
-                    textTransform: 'capitalize',
+                    color: '#888',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
                   }}
                 >
-                  {t.status.replace('_', ' ')}
-                </span>
-              </td>
-              <td style={{ padding: '12px' }}>
-                <span style={{ color: priorityColors[t.priority] ?? '#888', textTransform: 'capitalize' }}>
-                  {t.priority}
-                </span>
-              </td>
-              <td style={{ padding: '12px', color: '#555', fontSize: '13px' }}>{t.createdAt}</td>
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visible.map(t => (
+              <tr
+                key={t.id}
+                style={{ borderBottom: '1px solid #1e1e1e', transition: 'background 0.1s' }}
+              >
+                <td style={{ padding: '12px', color: '#d0d0d0' }}>{t.title}</td>
+                <td style={{ padding: '12px' }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      background: (statusColors[t.status] ?? '#888') + '22',
+                      border: `1px solid ${(statusColors[t.status] ?? '#888')}44`,
+                      color: statusColors[t.status] ?? '#888',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {t.status.replace('_', ' ')}
+                  </span>
+                </td>
+                <td style={{ padding: '12px' }}>
+                  <span style={{ color: priorityColors[t.priority] ?? '#888', textTransform: 'capitalize' }}>
+                    {t.priority}
+                  </span>
+                </td>
+                <td style={{ padding: '12px', color: '#555', fontSize: '13px' }}>
+                  {new Date(t.createdAt).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
@@ -996,6 +1086,191 @@ function SystemPromptTab() {
   )
 }
 
+// ── Tab 6: Health ──────────────────────────────────────────────────────────
+
+function HealthTab() {
+  const userId = 'varun'
+  const [stats, setStats] = useState<HealthStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [decayRunning, setDecayRunning] = useState(false)
+  const [decayMsg, setDecayMsg] = useState<string | null>(null)
+
+  async function fetchHealth() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/memory/health?userId=${encodeURIComponent(userId)}`)
+      if (!res.ok) {
+        const d = (await res.json()) as { error?: string }
+        setError(d.error ?? 'Failed to fetch health stats')
+        return
+      }
+      const data = (await res.json()) as HealthStats
+      setStats(data)
+    } catch {
+      setError('Network error — could not load health stats')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function runDecay() {
+    setDecayRunning(true)
+    setDecayMsg(null)
+    try {
+      const res = await fetch('/api/memory/health', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      if (res.ok) {
+        setDecayMsg('Decay run complete.')
+        void fetchHealth()
+      } else {
+        const d = (await res.json()) as { error?: string }
+        setDecayMsg(d.error ?? 'Decay run failed.')
+      }
+    } catch {
+      setDecayMsg('Network error during decay run.')
+    } finally {
+      setDecayRunning(false)
+    }
+  }
+
+  useEffect(() => {
+    void fetchHealth()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function scoreColor(score: number): string {
+    if (score >= 80) return '#22c55e'
+    if (score >= 60) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  const statCard = (label: string, value: React.ReactNode, sub?: string) => (
+    <div style={{ ...s.card, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <span style={{ fontSize: '12px', fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </span>
+      <span style={{ fontSize: '22px', fontWeight: 700, color: '#e5e5e5', lineHeight: 1 }}>
+        {value}
+      </span>
+      {sub && <span style={{ fontSize: '12px', color: '#555' }}>{sub}</span>}
+    </div>
+  )
+
+  return (
+    <div>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <p style={{ ...s.sectionTitle, margin: 0 }}>Memory Health</p>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {decayMsg && (
+            <span style={{ fontSize: '13px', color: '#888' }}>{decayMsg}</span>
+          )}
+          <button
+            onClick={() => void runDecay()}
+            disabled={decayRunning || loading}
+            style={{ ...s.btnSecondary, opacity: decayRunning ? 0.6 : 1 }}
+          >
+            {decayRunning ? 'Running Decay...' : 'Run Decay'}
+          </button>
+          <button
+            onClick={() => void fetchHealth()}
+            disabled={loading}
+            style={s.btnSecondary}
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div style={s.errorBanner}>{error}</div>}
+
+      {loading ? (
+        <div style={{ color: '#666', textAlign: 'center', padding: '40px' }}>Loading health stats...</div>
+      ) : !stats ? (
+        <div style={{ color: '#555', textAlign: 'center', padding: '40px' }}>
+          No health data available. Add memories to generate stats.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: '20px' }}>
+
+          {/* Health score — large featured card */}
+          <div style={{
+            ...s.card,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
+            borderColor: scoreColor(stats.healthScore) + '44',
+          }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: scoreColor(stats.healthScore) + '22',
+              border: `2px solid ${scoreColor(stats.healthScore)}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: '22px', fontWeight: 700, color: scoreColor(stats.healthScore) }}>
+                {stats.healthScore}
+              </span>
+            </div>
+            <div>
+              <p style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
+                Health Score
+              </p>
+              <p style={{ margin: 0, fontSize: '13px', color: '#888' }}>
+                {stats.healthScore >= 80 ? 'Memory is in great shape.' : stats.healthScore >= 60 ? 'Memory needs some attention.' : 'Memory health is low — consider running decay or reviewing stale entries.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Memory counts */}
+          <div>
+            <p style={{ ...s.label, marginBottom: '10px' }}>Memory Counts</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+              {statCard('Total', stats.totalMemories)}
+              {statCard('Active', stats.activeMemories)}
+              {statCard('Decayed', stats.decayedMemories)}
+              {statCard('Stale', stats.staleCount)}
+            </div>
+          </div>
+
+          {/* By type */}
+          <div>
+            <p style={{ ...s.label, marginBottom: '10px' }}>By Type</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+              {statCard('Episodic', stats.byType.episodic)}
+              {statCard('Semantic', stats.byType.semantic)}
+              {statCard('Preference', stats.byType.preference)}
+              {statCard('Procedural', stats.byType.procedural)}
+            </div>
+          </div>
+
+          {/* Scores and misc */}
+          <div>
+            <p style={{ ...s.label, marginBottom: '10px' }}>Scores & Activity</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
+              {statCard('Avg Importance', stats.avgImportance.toFixed(2))}
+              {statCard('Avg Relevance', stats.avgRelevanceScore.toFixed(2))}
+              {statCard('Threads', stats.threadCount, `${stats.openThreadCount} open`)}
+              {statCard('Profile Keys', stats.profileKeyCount)}
+              {statCard('Oldest Memory', `${stats.oldestMemoryDays}d`, 'days ago')}
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────
 
 const TABS: Array<{ id: TabId; label: string }> = [
@@ -1004,6 +1279,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'threads', label: 'Threads' },
   { id: 'profile', label: 'Profile' },
   { id: 'system-prompt', label: 'System Prompt' },
+  { id: 'health', label: 'Health' },
 ]
 
 export default function Dashboard() {
@@ -1016,6 +1292,7 @@ export default function Dashboard() {
       case 'threads':       return <ThreadsTab />
       case 'profile':       return <ProfileTab />
       case 'system-prompt': return <SystemPromptTab />
+      case 'health':        return <HealthTab />
       default:              return null
     }
   }

@@ -16,12 +16,8 @@ async function migrate() {
   const local = new LocalStorage(dbPath)
   const cloud = new CloudStorage()
 
-  // Get all distinct users
-  const rows = (local as any).db.prepare(
-    `SELECT DISTINCT user_id FROM memories WHERE decayed_at IS NULL`
-  ).all() as any[]
-
-  const users = rows.map(r => r.user_id)
+  // Get all distinct users via the adapter method (no internal db access)
+  const users = local.getDistinctUserIds()
   console.log(`[migrate] Found ${users.length} user(s): ${users.join(', ')}`)
 
   let totalImported = 0
